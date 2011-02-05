@@ -25,14 +25,19 @@ class RestThread(threading.Thread):
         mention_last_id = None
         con = True
 
-        home = self.api.home_timeline(count=200)
-        mentions = self.api.mentions(count=200)
+        home = self.api.home_timeline(count=20)
+        mentions = self.api.mentions(count=20)
+        #me = self.api.user_timeline(self.client.my_name)
+
 
         for s in home:
             self.client.statuses[s.id] = s
 
         for s in mentions:
             self.client.statuses[s.id] = s
+
+        #for s in me:
+        #   self.client.statuses[s.id] = s
 
         h_ids = list(reversed([h.id for h in home]))
         m_ids = list(reversed([m.id for m in mentions]))

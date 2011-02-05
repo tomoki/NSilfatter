@@ -32,7 +32,9 @@ class Timeline(gtk.TreeView):
         self.client = client
         self.mode = mode
         self.client.store.add_store(self)
+        self.client.reply_getter.add_timeline(self)
         self.iconstore = self.client.store
+        self.reply_getter = self.client.reply_getter
 
         gtk.TreeView.__init__(self,*args,**kwargs)
 
@@ -212,9 +214,7 @@ class Timeline(gtk.TreeView):
                     if not st_id in self.id_list:
                         toappends.append((st_id,self.status_pack(st_id)))
                         if not first:
-                            n = pynotify.Notification(st.user.screen_name,st.text,None)
-                            n.show()
-
+                            self.iconstore.notify(st)
                         self.added = True
 
             elif self.mode == "event":
@@ -243,10 +243,53 @@ class Timeline(gtk.TreeView):
         tmpl = u"<b>%s</b>\n%s"
 
         message = tmpl % (name,text)
+        if not status.in_reply_to_status_id == None:
+            s = self.reply_getter.get(status)
+            if not s == None:
+                in_name = s.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%s.user.name
+
+                in_text = self._replace_amp(s.text)
+
+                in_tmpl = u"--→<b>%s</b>\n%s"
+
+                in_message = in_tmpl % (in_name,in_text)
+
+                message = "%s\n%s"%(message,in_message)
+
 
         # return (pixbuf,text)
         return(self.iconstore.get(status.user),
                 message)
+
+    def add_reply_to(self,in_status,ite,n):
+        status = self.get_status(n)
+
+        name = status.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%status.user.name
+        in_name = in_status.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%in_status.user.name
+
+
+        # if status is retweeted event.
+        if status.retweeted_status != None:
+            rtstatus = status
+            status = status.retweeted_status
+            name = "%s <span foreground='#333333'><small> %s Re by %s</small></span>" %(
+                    status.user.screen_name,status.user.name,rtstatus.user.screen_name)
+
+        text = self._replace_amp(status.text)
+        in_text = self._replace_amp(in_status.text)
+
+        tmpl = u"<b>%s</b>\n%s"
+        in_tmpl = u"--→<b>%s</b>\n%s"
+
+        message = tmpl % (name,text)
+        in_message = in_tmpl % (in_name,in_text)
+
+        message = "%s\n%s"%(message,in_message)
+
+        gtk.gdk.threads_enter()
+        self.store.set_value(ite,1,message)
+        gtk.gdk.threads_leave()
+
 
     # When size changed,call this.
     def on_size_changed(self,treeview,allocate):

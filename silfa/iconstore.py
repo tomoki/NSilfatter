@@ -7,7 +7,9 @@ import sys
 import threading
 import urllib
 import time
+import pynotify
 from settings import *
+import twoauth
 
 class IconStore(object):
     def __init__(self):
@@ -34,17 +36,35 @@ class IconStore(object):
         except:
             pass
 
+    def notify(self,event_data):
+        if isinstance(event_data,twoauth.status.TwitterStatus):
+            if event_data.user.profile_image_url in self.raw_data:
+                n = pynotify.Notification(
+                        event_data.user.screen_name,
+                        event_data.text,
+                        self.raw_data[event_data.user.profile_image_url]
+                        )
+                n.show()
+            else:
+                n = pynotify.Notification(
+                        event_data.user.screen_name,
+                        event_data.text,
+                        None,
+                        )
+                n.show()
+
     def add_store(self,timeline):
         self.stores.append(timeline)
 
 class NewIcon(threading.Thread):
-    def __init__(self,user,timelines,icons,raw_data,semaphore):
+    def __init__(self,user,timelines,icons,raw_data,semaphore,mode="normal"):
         threading.Thread.__init__(self)
         self.setDaemon(True)
         self.setName("IconGetting :%s"%user.screen_name)
         self.user = user
         self.timelines = timelines
         self.icons = icons
+        self.mode = mode
         self.raw_data = raw_data
         self.semaphore = semaphore
 

@@ -5,6 +5,7 @@ import gtk
 from postbox import PostBox
 from cwindow import ClientWindow
 from iconstore import IconStore
+from delayer import InReplyGetter
 from replydialog import ReplyWindow
 from urldialog import UrlWindow
 from timeline import *
@@ -23,7 +24,9 @@ class client(object):
         self.my_name = self.me.screen_name
         pynotify.init("Silfatter")
         self.statuses = {}
+
         self.store = IconStore()
+        self.reply_getter = InReplyGetter(self)
 
         self.window = ClientWindow()
 
