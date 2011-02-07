@@ -10,6 +10,7 @@ import gobject
 import pynotify
 from settings import *
 
+fav_text = FAV_TEXT
 class Timeline(gtk.TreeView):
     # keypressed Event.
     __gsignals__= {
@@ -25,9 +26,11 @@ class Timeline(gtk.TreeView):
     ) = range(2)
 
     def __init__(self,client,mode="home",*args,**kwargs):
+        gtk.TreeView.__init__(self,*args,**kwargs)
         # Store That save Column data.
         self.store = gtk.ListStore(gtk.gdk.Pixbuf,str)
         self.id_list = []
+        self.faving = False
 
         self.client = client
         self.mode = mode
@@ -35,8 +38,7 @@ class Timeline(gtk.TreeView):
         self.client.reply_getter.add_timeline(self)
         self.iconstore = self.client.store
         self.reply_getter = self.client.reply_getter
-
-        gtk.TreeView.__init__(self,*args,**kwargs)
+        self.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_NONE)
 
         # When keypressed,call self.keypressed.
         self.connect("keypressed",self.keypressed)
@@ -142,18 +144,25 @@ class Timeline(gtk.TreeView):
             st = self.get_status(now[0][0])
 
             if st.retweeted_status == None:
-                self.client.reply_window.show_up(st.id)
+                self.client.post_window.show_up(reply=True,
+                        in_reply_to_status_id=st.id)
             else:
-                self.client.reply_window.show_up(st.retweeted_status.id)
+                self.client.post_window.show_up(reply=True,
+                        in_reply_to_status_id=st.retweeted_status.id)
 
         elif what == "R":
             now = self.get_cursor()
             st = self.get_status(now[0][0])
 
             if st.retweeted_status == None:
-                self.client.reply_window.show_up(st.id,rt=True)
+                self.client.post_window.show_up(rt=True,
+                        in_reply_to_status_id=st.id)
             else:
-                self.client.reply_window.show_up(st.retweeted_status.id,rt=True)
+                self.client.post_window.show_up(rt=True,
+                        in_reply_to_status_id=st.retweeted_status.id)
+
+        elif what == "a":
+            self.client.post_window.show_up()
 
         elif what == "h":
             self.client.lines_note_book.prev_page()
@@ -183,6 +192,37 @@ class Timeline(gtk.TreeView):
                         t = threading.Thread(target=retweet)
                         t.start()
 
+        elif what == "f":
+            s = self.get_selected_status()
+            fav = True
+            (path,column) = self.get_cursor()
+            if not s == None:
+                if not s.favorited:
+                    def favorite():
+                        new_s = self.client.api.favorite_create(s.id)
+                        self.client.statuses[new_s.id] = new_s
+                        self.id_list[path[0]] = new_s.id
+                    t = threading.Thread(target=favorite)
+                    t.start()
+                    fav = True
+                else:
+                    def unfavorite():
+                        new_s = self.client.api.favorite_destroy(s.id)
+                        self.client.statuses[new_s.id] = new_s
+                        self.id_list[path[0]] = new_s.id
+                    t = threading.Thread(target=unfavorite)
+                    t.start()
+                    fav = False
+
+            if not path == None:
+                ite = self.store.get_iter(path)
+                before_text = self.store.get_value(ite,self.COLUMN_TEXT).decode("utf-8")
+                if fav:
+                    self.store.set_value(ite,self.COLUMN_TEXT,
+                            fav_text+before_text)
+                else:
+                    self.store.set_value(ite,self.COLUMN_TEXT,
+                            before_text[len(fav_text):])
 
 
     # replace &amp; to &
@@ -237,6 +277,7 @@ class Timeline(gtk.TreeView):
             status = status.retweeted_status
             name = "%s <span foreground='#333333'><small> %s Re by %s</small></span>" %(
                     status.user.screen_name,status.user.name,rtstatus.user.screen_name)
+        faved = status.favorited
 
         text = self._replace_amp(status.text)
 
@@ -250,12 +291,14 @@ class Timeline(gtk.TreeView):
 
                 in_text = self._replace_amp(s.text)
 
-                in_tmpl = u"--→<b>%s</b>\n%s"
+                in_tmpl = u"<span foreground='#333333'><small>--→<b>%s</b>\n%s</small></span>"
 
                 in_message = in_tmpl % (in_name,in_text)
 
                 message = "%s\n%s"%(message,in_message)
 
+        if faved:
+            message = fav_text + message
 
         # return (pixbuf,text)
         return(self.iconstore.get(status.user),
@@ -279,7 +322,7 @@ class Timeline(gtk.TreeView):
         in_text = self._replace_amp(in_status.text)
 
         tmpl = u"<b>%s</b>\n%s"
-        in_tmpl = u"--→<b>%s</b>\n%s"
+        in_tmpl = u"<span foreground='#333333'><small>--→<b>%s</b>\n%s</small></span>"
 
         message = tmpl % (name,text)
         in_message = in_tmpl % (in_name,in_text)
@@ -287,7 +330,7 @@ class Timeline(gtk.TreeView):
         message = "%s\n%s"%(message,in_message)
 
         gtk.gdk.threads_enter()
-        self.store.set_value(ite,1,message)
+        self.store.set_value(ite,self.COLUMN_TEXT,message)
         gtk.gdk.threads_leave()
 
 
@@ -340,6 +383,10 @@ gtk.binding_entry_add_signal(Timeline,gtk.keysyms.G,
 gtk.binding_entry_add_signal(Timeline,gtk.keysyms.R,
         0,"keypressed",str,"r")
 
+# when t is pressed,call keypressed event.
+gtk.binding_entry_add_signal(Timeline,gtk.keysyms.A,
+        0,"keypressed",str,"a")
+
 # when h is pressed,call keypressed event.
 gtk.binding_entry_add_signal(Timeline,gtk.keysyms.H,
         0,"keypressed",str,"h")
@@ -356,11 +403,14 @@ gtk.binding_entry_add_signal(Timeline,gtk.keysyms.U,
 gtk.binding_entry_add_signal(Timeline,gtk.keysyms.T,
         0,"keypressed",str,"t")
 
+# when f is pressed,call keypressed event.
+gtk.binding_entry_add_signal(Timeline,gtk.keysyms.F,
+        0,"keypressed",str,"f")
+
 # when r is pressed,call keypressed event.
 # Shift_Mask.not r but R
 gtk.binding_entry_add_signal(Timeline,gtk.keysyms.R,
         gtk.gdk.SHIFT_MASK,"keypressed",str,"R")
-
 
 
 class Timelinesw(gtk.ScrolledWindow):

@@ -15,7 +15,8 @@ class ClientWindow(gtk.Window):
         self.accel_group = gtk.AccelGroup()
         self.add_accel_group(self.accel_group)
 
-        self.set_title(u"Silfatter")
+        self.set_title(u"NSilfatter")
+        self.set_icon_from_file(WINDOW_ICON)
         self.connect("delete_event",self.close_window)
         self.set_default_size(400,400)
 

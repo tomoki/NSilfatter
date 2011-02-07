@@ -6,7 +6,7 @@ from postbox import PostBox
 from cwindow import ClientWindow
 from iconstore import IconStore
 from delayer import InReplyGetter
-from replydialog import ReplyWindow
+from postdialog import PostWindow
 from urldialog import UrlWindow
 from timeline import *
 import pango
@@ -50,7 +50,7 @@ class client(object):
         rest.add(self.home_timeline_sw.view)
         rest.add(self.mention_timeline_sw.view)
 
-        self.reply_window = ReplyWindow(self)
+        self.post_window = PostWindow(self)
         self.url_window = UrlWindow(self)
 
         self.lines_note_book.append_page(self.home_timeline_sw,gtk.Label("Home"))
@@ -60,7 +60,7 @@ class client(object):
         self.window.add(main_vbox)
         self.window.set_size_request(300,300)
 
-        main_vbox.pack_start(post_box,expand=False,fill=True)
+        #main_vbox.pack_start(post_box,expand=False,fill=True)
         main_vbox.pack_start(self.lines_note_book,expand=True,fill=True)
 
         stream.start()

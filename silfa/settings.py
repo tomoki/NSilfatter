@@ -13,5 +13,7 @@ CONSUMER_SECRET = "153M18YKRt8efqyPC8OrZoxX3M8aqK2mpxQdW68dc8"
 
 TRAY_ICON = os.path.join(CURRENT_DIR,"../","img","tray.png")
 ERROR_ICON = os.path.join(CURRENT_DIR,"../","img","error.png")
+WINDOW_ICON = os.path.join(CURRENT_DIR,"../","img","icon.png")
 
 ICON_SIZE = (48,48)
+FAV_TEXT = u"★"
