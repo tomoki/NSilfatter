@@ -25,20 +25,28 @@ class RestThread(threading.Thread):
         mention_last_id = None
         con = True
 
-        home = self.api.home_timeline(count=200)
-        mentions = self.api.mentions(count=20)
-        me = self.api.user_timeline(self.client.my_name,count=200)
-
+        for i in range(3):
+            try:
+                home = self.api.home_timeline(count=200)
+                mentions = self.api.mentions(count=20)
+                me = self.api.user_timeline(self.client.my_name,count=200)
+                break
+            except:
+                pass
 
         for s in home:
             self.client.statuses[s.id] = s
+            if not s.retweeted_status == None:
+                self.client.statuses[s.retweeted_status.id] = s.retweeted_status
 
         for s in mentions:
             self.client.statuses[s.id] = s
-
+            if not s.retweeted_status == None:
+                self.client.statuses[s.retweeted_status.id] = s.retweeted_status
         for s in me:
             self.client.statuses[s.id] = s
-
+            if not s.retweeted_status == None:
+                self.client.statuses[s.retweeted_status.id] = s.retweeted_status
         h_ids = list(reversed([h.id for h in home]))
         m_ids = list(reversed([m.id for m in mentions]))
 
@@ -60,9 +68,12 @@ class RestThread(threading.Thread):
 
                 for s in home:
                     self.client.statuses[s.id] = s
-
+                    if not s.retweeted_status == None:
+                        self.client.statuses[s.retweeted_status.id] = s.retweeted_status
                 for s in mentions:
                     self.client.statuses[s.id] = s
+                    if not s.retweeted_status == None:
+                        self.client.statuses[s.retweeted_status.id] = s.retweeted_status
 
                 for timeline in self.timelines:
                     if timeline.mode == "home":
@@ -82,6 +93,7 @@ class StreamingThread(threading.Thread):
     def __init__(self,client,args=(),kwargs={}):
         threading.Thread.__init__(self)
         self.client = client
+        self.statuses = client.statuses
         self.setDaemon(True)
         self.setName("Streaming")
 
@@ -89,11 +101,15 @@ class StreamingThread(threading.Thread):
         self.kwargs = kwargs
 
         self.timelines = []
+        self.eventlines = []
         self.die = False
         self.s = twoauth.streaming.StreamingAPI(self.client.api.oauth)
 
-    def add(self,timeline):
+    def add_timeline(self,timeline):
         self.timelines.append(timeline)
+
+    def add_eventline(self,eventline):
+        self.eventlines.append(eventline)
 
     def run(self):
         stream = self.s.user()
@@ -108,21 +124,20 @@ class StreamingThread(threading.Thread):
 
     def add_events(self,events):
         new_statuses = set()
-        es = []
+        new_events = []
         for event in events:
             # If event is new Status receive
             if isinstance(event,twoauth.status.TwitterStatus):
                 new_statuses.add(event.id)
-                if not event.id in self.client.statuses:
-                    self.client.statuses[event.id] = event
+                self.statuses[event.id] = event
                 if not event.retweeted_status == None:
-                    self.client.statuses[event.retweeted_status.id] = event.retweeted_status
+                    self.statuses[event.retweeted_status.id] = event.retweeted_status
 
             elif isinstance(event,twoauth.event.favorite):
-                es.append(event)
+                new_events.append(event)
 
             elif isinstance(event,twoauth.event.unfavorite):
-                es.append(event)
+                new_events.append(event)
 
             elif isinstance(event,twoauth.event.friends):
                 pass
@@ -130,3 +145,9 @@ class StreamingThread(threading.Thread):
         if not len(new_statuses) == 0:
             for time in self.timelines:
                 time.prepend_new_statuses(list(new_statuses))
+            for eventline in self.eventlines:
+                eventline.prepend_new_statuses(list(new_statuses))
+
+        if not len(new_events) == 0:
+            for eventline in self.eventlines:
+                eventline.prepend_new_events(new_events)

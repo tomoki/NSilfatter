@@ -2,19 +2,20 @@
 #coding:utf-8
 
 import gtk
-from postbox import PostBox
 from cwindow import ClientWindow
 from iconstore import IconStore
-from delayer import InReplyGetter
+from replygetter import InReplyGetter
 from postdialog import PostWindow
 from urldialog import UrlWindow
 from timeline import *
+from eventline import *
 import pango
 import twoauth
 import sys
 from settings import *
 import pynotify
 from timelinethread import StreamingThread,RestThread
+import twittertool
 
 class client(object):
     def __init__(self):
@@ -25,8 +26,9 @@ class client(object):
         pynotify.init("Silfatter")
         self.statuses = {}
 
-        self.store = IconStore()
+        self.iconstore = IconStore()
         self.reply_getter = InReplyGetter(self)
+        self.twtool = twittertool.TwitterTool()
 
         self.window = ClientWindow()
 
@@ -36,16 +38,15 @@ class client(object):
         rest = RestThread(self)
 
         main_vbox = gtk.VBox()
-        post_box = PostBox(self)
 
         self.lines_note_book = gtk.Notebook()
         self.home_timeline_sw = Timelinesw(self,"home")
         self.mention_timeline_sw = Timelinesw(self,"mention")
-#        self.event_timeline_sw = Timelinesw(self,"event")
+        self.event_timeline_sw = Eventlinesw(self)
 
-        stream.add(self.home_timeline_sw.view)
-        stream.add(self.mention_timeline_sw.view)
-#        stream.add(self.event_timeline_sw.view)
+        stream.add_timeline(self.home_timeline_sw.view)
+        stream.add_timeline(self.mention_timeline_sw.view)
+        stream.add_eventline(self.event_timeline_sw.view)
 
         rest.add(self.home_timeline_sw.view)
         rest.add(self.mention_timeline_sw.view)
@@ -55,12 +56,11 @@ class client(object):
 
         self.lines_note_book.append_page(self.home_timeline_sw,gtk.Label("Home"))
         self.lines_note_book.append_page(self.mention_timeline_sw,gtk.Label("Mention"))
-#        self.lines_note_book.append_page(self.event_timeline_sw,gtk.Label("Event"))
+        self.lines_note_book.append_page(self.event_timeline_sw,gtk.Label("Event"))
 
         self.window.add(main_vbox)
         self.window.set_size_request(300,300)
 
-        #main_vbox.pack_start(post_box,expand=False,fill=True)
         main_vbox.pack_start(self.lines_note_book,expand=True,fill=True)
 
         stream.start()

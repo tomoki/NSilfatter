@@ -1,8 +1,4 @@
-#!/usr/bin/env python
-#coding:utf-8
-
 import gtk
-import threading
 from settings import *
 
 class ClientWindow(gtk.Window):

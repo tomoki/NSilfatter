@@ -5,7 +5,7 @@ import re
 import gtk
 import webbrowser
 
-URL_PATTERN = re.compile(r"https?://[A-Z|0-9|_|.|/|-|#|!|?|\-|=]*",re.IGNORECASE)
+URL_PATTERN = re.compile(ur"(?P<url>https?://[^\s　]*)",re.IGNORECASE)
 
 class UrlWindow(gtk.Window):
     def __init__(self,client):
@@ -37,7 +37,7 @@ class UrlWindow(gtk.Window):
                 self.buttons.append([gtk.LinkButton("http://www.example.net"),False])
 
         for button in self.buttons:
-            if button[1]==True:
+            if button[1]:
                 self.top.remove(button[0])
                 button[1] = False
 

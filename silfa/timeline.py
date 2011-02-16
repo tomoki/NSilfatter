@@ -1,16 +1,35 @@
-#/usr/bin/env python
+#!/usr/bin/env python
 #coding:utf-8
 
 import gtk
-import threading
 import pango
-import re
 import time
 import gobject
-import pynotify
+import re
+import threading
 from settings import *
 
-fav_text = FAV_TEXT
+# DetaStoreDefine.
+(
+    #Pixbuf
+    USER_ICON,
+    #str
+    MESSAGE,
+    #str
+    USER_ICON_URL,
+    #float
+    TWEET_ID,
+    #bool
+    FAVING,
+) = range(5)
+
+name_template = u"%s<small> %s</small>"
+retweeted_name_template = u"%s<small> %s Re by %s</small>"
+message_template = u"<b>%s</b>\n%s"
+in_template = u"<small><b>-->%s</b>\n%s</small>"
+adding_template = u"%s\n%s"
+
+
 class Timeline(gtk.TreeView):
     # keypressed Event.
     __gsignals__= {
@@ -18,27 +37,27 @@ class Timeline(gtk.TreeView):
                          None,
                          (str,),)
             }
-    # Column defines.
-    # |icon|text|
-    (
-        COLUMN_ICON,
-        COLUMN_TEXT,
-    ) = range(2)
 
     def __init__(self,client,mode="home",*args,**kwargs):
         gtk.TreeView.__init__(self,*args,**kwargs)
-        # Store That save Column data.
-        self.store = gtk.ListStore(gtk.gdk.Pixbuf,str)
-        self.id_list = []
-        self.faving = False
-
+        # model That save Column data.
+        self.liststore = gtk.ListStore(gtk.gdk.Pixbuf,str,
+                                       str,gobject.TYPE_INT64,
+                                       gobject.TYPE_BOOLEAN,
+                                       )
         self.client = client
         self.mode = mode
-        self.client.store.add_store(self)
+
+        self.client.iconstore.add_store(self.liststore)
         self.client.reply_getter.add_timeline(self)
-        self.iconstore = self.client.store
+
+        self.iconstore = self.client.iconstore
         self.reply_getter = self.client.reply_getter
-        self.set_grid_lines(gtk.TREE_VIEW_GRID_LINES_NONE)
+        self.twtool = self.client.twtool
+        self.api = self.client.api
+        self.statuses = self.client.statuses
+        self.id_list = []
+        self.added = False
 
         # When keypressed,call self.keypressed.
         self.connect("keypressed",self.keypressed)
@@ -57,7 +76,7 @@ class Timeline(gtk.TreeView):
         # call self.on_treeview_row_activated.
         self.connect("row_activated",self.on_treeview_row_activated)
 
-        self.set_model(self.store)
+        self.set_model(self.liststore)
 
         # cell_p is cellrenderer for icons.
         self.cell_p = gtk.CellRendererPixbuf()
@@ -65,7 +84,7 @@ class Timeline(gtk.TreeView):
         # This is first column.
         self.col_p = gtk.TreeViewColumn("ICON",
                                         self.cell_p,
-                                        pixbuf=self.COLUMN_ICON,
+                                        pixbuf=USER_ICON,
                                        )
 
         # cell_t is cellrenderer for text.
@@ -76,7 +95,7 @@ class Timeline(gtk.TreeView):
         # This is second column.
         self.col_t = gtk.TreeViewColumn("TEXT",
                                         self.cell_t,
-                                        markup=self.COLUMN_TEXT,
+                                        markup=MESSAGE,
                                         )
 
         # Size propertys for col_t.
@@ -84,8 +103,6 @@ class Timeline(gtk.TreeView):
         self.col_t.set_expand(True)
 
         self.noent_amp = re.compile(u"""&(?![A-Za-z]+;)""")
-        self._old_path = None
-        self.added = False
 
         self.append_column(self.col_p)
         self.append_column(self.col_t)
@@ -94,7 +111,7 @@ class Timeline(gtk.TreeView):
     def get_selected_status(self):
         (path,column) = self.get_cursor()
         if path != None:
-            return self.get_status(path[0])
+            return self.get_status(path)
         else:
             return None
 
@@ -106,124 +123,9 @@ class Timeline(gtk.TreeView):
             return None
 
     def get_status(self,path):
-        return self.client.statuses[self.id_list[path]]
-
-    # keypressed event.
-    # what is str(what key pressed)
-    def keypressed(self,tv, what):
-        # if j pressed,Scroll to next cell.
-        if what == "j":
-            # this is ((x,),gtkColumn)
-            now = self.get_cursor()
-            if not now == (None,None):
-                if not now[0][0] == len(self.store)-1:
-                    self.set_cursor(now[0][0]+1)
-
-        # if k pressed,Scroll to previous cell.
-        elif what == "k":
-            now = self.get_cursor()
-            if not now == (None,None):
-                if not now[0][0] == 0:
-                    self.set_cursor(now[0][0]-1)
-
-        # if g pressed,Scroll to first cell.
-        elif what == "g":
-            now = self.get_cursor()
-            if not now == (None,None):
-                self.set_cursor(0)
-
-        # if G pressed,Scroll to last cell.
-        elif what == "G":
-            now = self.get_cursor()
-            if not now == (None,None):
-                self.set_cursor(len(self.store)-1)
-
-        # if r pressed,show reply window.
-        elif what == "r":
-            now = self.get_cursor()
-            st = self.get_status(now[0][0])
-
-            if st.retweeted_status == None:
-                self.client.post_window.show_up(reply=True,
-                        in_reply_to_status_id=st.id)
-            else:
-                self.client.post_window.show_up(reply=True,
-                        in_reply_to_status_id=st.retweeted_status.id)
-
-        elif what == "R":
-            now = self.get_cursor()
-            st = self.get_status(now[0][0])
-
-            if st.retweeted_status == None:
-                self.client.post_window.show_up(rt=True,
-                        in_reply_to_status_id=st.id)
-            else:
-                self.client.post_window.show_up(rt=True,
-                        in_reply_to_status_id=st.retweeted_status.id)
-
-        elif what == "a":
-            self.client.post_window.show_up()
-
-        elif what == "h":
-            self.client.lines_note_book.prev_page()
-
-        elif what == "l":
-            self.client.lines_note_book.next_page()
-
-        elif what == "u":
-            s = self.get_selected_status()
-            if not s == None:
-                self.client.url_window.show_up(s.text)
-
-        elif what == "t":
-            s = self.get_selected_status()
-            if not s == None:
-                if not s.user.screen_name==self.client.my_name:
-                    dialog = gtk.MessageDialog(self.client.window,gtk.DIALOG_MODAL,
-                            gtk.MESSAGE_QUESTION,
-                            gtk.BUTTONS_OK_CANCEL,
-                            u"公式リツイートします")
-
-                    r = dialog.run()
-                    dialog.destroy()
-                    if r == gtk.RESPONSE_OK:
-                        def retweet():
-                            self.client.api.status_retweet(s.id)
-                        t = threading.Thread(target=retweet)
-                        t.start()
-
-        elif what == "f":
-            s = self.get_selected_status()
-            fav = True
-            (path,column) = self.get_cursor()
-            if not s == None:
-                if not s.favorited:
-                    def favorite():
-                        new_s = self.client.api.favorite_create(s.id)
-                        self.client.statuses[new_s.id] = new_s
-                        self.id_list[path[0]] = new_s.id
-                    t = threading.Thread(target=favorite)
-                    t.start()
-                    fav = True
-                else:
-                    def unfavorite():
-                        new_s = self.client.api.favorite_destroy(s.id)
-                        self.client.statuses[new_s.id] = new_s
-                        self.id_list[path[0]] = new_s.id
-                    t = threading.Thread(target=unfavorite)
-                    t.start()
-                    fav = False
-
-            if not path == None:
-                ite = self.store.get_iter(path)
-                before_text = self.store.get_value(ite,self.COLUMN_TEXT).decode("utf-8")
-                if fav:
-                    self.store.set_value(ite,self.COLUMN_TEXT,
-                            fav_text+before_text)
-                else:
-                    self.store.set_value(ite,self.COLUMN_TEXT,
-                            before_text[len(fav_text):])
-
+        ite = self.liststore.get_iter(path)
+        tweet_id = self.liststore.get_value(ite,TWEET_ID)
+        return self.statuses[tweet_id]
 
     # replace &amp; to &
     def _replace_amp(self,string):
@@ -243,96 +145,111 @@ class Timeline(gtk.TreeView):
         toappends = []
 
         for st_id in new_ids:
-            st = self.client.statuses[st_id]
-            if self.mode == "home":
-                if not st_id in self.id_list:
-                    toappends.append((st_id,self.status_pack(st_id)))
-                    self.added = True
-
-            elif self.mode == "mention":
-                if ("@" + self.client.my_name).lower() in st.text.lower():
+            st = self.statuses[st_id]
+            if not st_id in self.id_list:
+                if self.mode == "home":
                     if not st_id in self.id_list:
+                        toappends.append((st_id,self.status_pack(st_id)))
+                        self.added = True
+
+                elif self.mode == "mention":
+                    if self.client.my_name.lower() in st.text.lower():
                         toappends.append((st_id,self.status_pack(st_id)))
                         if not first:
                             self.iconstore.notify(st)
                         self.added = True
 
-            elif self.mode == "event":
-                pass
-
         gtk.gdk.threads_enter()
         for st_tuple in toappends:
-            self.id_list.insert(0,st_tuple[0])
-            self.store.prepend(st_tuple[1])
+            self.id_list.append(st_tuple[0])
+            self.liststore.prepend(st_tuple[1])
         gtk.gdk.threads_leave()
 
     # make status packed for prepend to treeview.
     def status_pack(self,i):
-        status = self.client.statuses[i]
-        name = status.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%status.user.name
+        status = self.statuses[i]
 
-        # if status is retweeted event.
         if status.retweeted_status != None:
-            rtstatus = status
-            status = status.retweeted_status
-            name = "%s <span foreground='#333333'><small> %s Re by %s</small></span>" %(
-                    status.user.screen_name,status.user.name,rtstatus.user.screen_name)
-        faved = status.favorited
+            rtstatus = status.retweeted_status
+            name = retweeted_name_template % (rtstatus.user.screen_name,
+                                       rtstatus.user.name,
+                                       status.user.screen_name,
+                                      )
 
-        text = self._replace_amp(status.text)
+            text = self._replace_amp(rtstatus.text)
+            message = message_template%(name,text)
+            message = self.twtool.get_colored_url(message)
+            message = self.twtool.get_colored_user(message)
 
-        tmpl = u"<b>%s</b>\n%s"
+            if not rtstatus.in_reply_to_status_id == None:
+                in_s = self.reply_getter.get(rtstatus)
+                if not in_s == None:
+                    in_name = name_template % (in_s.user.screen_name,
+                                               in_s.user.name
+                                              )
 
-        message = tmpl % (name,text)
-        if not status.in_reply_to_status_id == None:
-            s = self.reply_getter.get(status)
-            if not s == None:
-                in_name = s.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%s.user.name
+                    in_text = self._replace_amp(in_s.text)
+                    in_message = in_template % (in_name,in_text)
 
-                in_text = self._replace_amp(s.text)
+                    message = adding_template % (message,in_message)
 
-                in_tmpl = u"<span foreground='#333333'><small>--→<b>%s</b>\n%s</small></span>"
+            if rtstatus.favorited:
+                message = FAV_TEXT + message
 
-                in_message = in_tmpl % (in_name,in_text)
+            return(self.iconstore.get(rtstatus.user),
+                   message,
+                   rtstatus.user.profile_image_url,
+                   rtstatus.id,
+                   False,
+                   )
+        else:
+            name = name_template % (status.user.screen_name,
+                                  status.user.name,
+                                 )
 
-                message = "%s\n%s"%(message,in_message)
+            text = self._replace_amp(status.text)
+            message = message_template%(name,text)
+            message = self.twtool.get_colored_url(message)
+            message = self.twtool.get_colored_user(message)
 
-        if faved:
-            message = fav_text + message
+            if not status.in_reply_to_status_id == None:
+                in_s = self.reply_getter.get(status)
+                if not in_s == None:
+                    in_name = name_template % (in_s.user.screen_name,
+                                               in_s.user.name
+                                              )
 
-        # return (pixbuf,text)
-        return(self.iconstore.get(status.user),
-                message)
+                    in_text = self._replace_amp(in_s.text)
+                    in_message = in_template % (in_name,in_text)
 
-    def add_reply_to(self,in_status,ite,n):
-        status = self.get_status(n)
+                    message = adding_template % (message,in_message)
 
-        name = status.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%status.user.name
-        in_name = in_status.user.screen_name + "<span foreground='#333333'><small> %s</small></span>"%in_status.user.name
+            if status.favorited:
+                message = FAV_TEXT + message
 
+            return(self.iconstore.get(status.user),
+                   message,
+                   status.user.profile_image_url,
+                   status.id,
+                   False,
+                   )
 
-        # if status is retweeted event.
-        if status.retweeted_status != None:
-            rtstatus = status
-            status = status.retweeted_status
-            name = "%s <span foreground='#333333'><small> %s Re by %s</small></span>" %(
-                    status.user.screen_name,status.user.name,rtstatus.user.screen_name)
+    def add_reply_to(self,in_s,ite):
+        before_message = self.liststore.get_value(ite,MESSAGE).decode(u"utf-8")
 
-        text = self._replace_amp(status.text)
-        in_text = self._replace_amp(in_status.text)
+        in_name = name_template % (in_s.user.screen_name,
+                                   in_s.user.name,
+                                  )
 
-        tmpl = u"<b>%s</b>\n%s"
-        in_tmpl = u"<span foreground='#333333'><small>--→<b>%s</b>\n%s</small></span>"
+        in_text = self._replace_amp(in_s.text)
 
-        message = tmpl % (name,text)
-        in_message = in_tmpl % (in_name,in_text)
+        in_message = in_template % (in_name,in_text)
 
-        message = "%s\n%s"%(message,in_message)
+        message = adding_template % (before_message,in_message)
 
         gtk.gdk.threads_enter()
-        self.store.set_value(ite,self.COLUMN_TEXT,message)
+        self.liststore.set_value(ite,MESSAGE,message)
         gtk.gdk.threads_leave()
-
 
     # When size changed,call this.
     def on_size_changed(self,treeview,allocate):
@@ -341,26 +258,138 @@ class Timeline(gtk.TreeView):
         width2 = 0
         #     |pix|text|
         #         <---->
-        for c in columns[:self.COLUMN_TEXT]+columns[self.COLUMN_TEXT+1:]:
+        for c in columns[:MESSAGE]+columns[MESSAGE+1:]:
             width2 = width2 + c.get_property("width")
 
-        cell_r = columns[self.COLUMN_TEXT].get_cell_renderers()
+        cell_r = columns[MESSAGE].get_cell_renderers()
         cell_r[0].set_property("wrap-width",width-width2-10)
         def refresh_text():
-            i = self.store.get_iter_first()
+            i = self.liststore.get_iter_first()
             while i:
-                txt = self.store.get_value(i,self.COLUMN_TEXT)
+                txt = self.liststore.get_value(i,MESSAGE)
                 gtk.gdk.threads_enter()
-                self.store.set_value(i,self.COLUMN_TEXT,txt)
+                self.liststore.set_value(i,MESSAGE,txt)
                 gtk.gdk.threads_leave()
-                i = self.store.iter_next(i)
+                i = self.liststore.iter_next(i)
 
         t = threading.Thread(target=refresh_text)
         t.setName("RefreshText")
         t.start()
 
     def on_treeview_row_activated(self,treeview,path,view_column):
-        status = self.get_status(path[0])
+        pass
+
+    # keypressed event.
+    # what is str(what key pressed)
+    def keypressed(self,tv, what):
+        # if j pressed,Scroll to next cell.
+        if what == "j":
+            # this is ((x,),gtkColumn)
+            now = self.get_cursor()
+            if not now == (None,None):
+                if not now[0][0] == len(self.liststore)-1:
+                    self.set_cursor(now[0][0]+1)
+
+        # if k pressed,Scroll to previous cell.
+        elif what == "k":
+            now = self.get_cursor()
+            if not now == (None,None):
+                if not now[0][0] == 0:
+                    self.set_cursor(now[0][0]-1)
+
+        # if g pressed,Scroll to first cell.
+        elif what == "g":
+            now = self.get_cursor()
+            if not now == (None,None):
+                self.set_cursor(0)
+
+        # if G pressed,Scroll to last cell.
+        elif what == "G":
+            now = self.get_cursor()
+            if not now == (None,None):
+                self.set_cursor(len(self.liststore)-1)
+
+        # if r pressed,show reply window.
+        elif what == "r":
+            st = self.get_selected_status()
+
+            self.client.post_window.show_up(reply=True,
+                        in_reply_to_status_id=st.id)
+
+        elif what == "R":
+            st = self.get_selected_status()
+
+            self.client.post_window.show_up(rt=True,
+                        in_reply_to_status_id=st.id)
+
+        elif what == "a":
+            self.client.post_window.show_up()
+
+        elif what == "h":
+            self.client.lines_note_book.prev_page()
+
+        elif what == "l":
+            self.client.lines_note_book.next_page()
+
+        elif what == "u":
+            s = self.get_selected_status()
+            if not s == None:
+                self.client.url_window.show_up(s.text)
+
+        elif what == "t":
+            s = self.get_selected_status()
+            if not s == None and not s.user.screen_name == self.client.my_name:
+                dialog = gtk.MessageDialog(self.client.window,gtk.DIALOG_MODAL,
+                        gtk.MESSAGE_QUESTION,
+                        gtk.BUTTONS_OK_CANCEL,
+                        u"公式リツイートします")
+
+                r = dialog.run()
+                dialog.destroy()
+                if r == gtk.RESPONSE_OK:
+                    def retweet():
+                        self.client.api.status_retweet(s.id)
+                    t = threading.Thread(target=retweet)
+                    t.start()
+
+        elif what == "f":
+            s = self.get_selected_status()
+
+
+            if not s == None:
+                (path,column) = self.get_cursor()
+                ite = self.liststore.get_iter(path)
+                faving = self.liststore.get_value(ite,FAVING)
+                if not faving:
+                    if not s.favorited:
+                        fav = True
+                        def favorite():
+                            self.liststore.set_value(ite,FAVING,True)
+                            new_s = self.api.favorite_create(s.id)
+                            self.statuses[new_s.id] = new_s
+                            self.liststore.set_value(ite,FAVING,False)
+                            self.liststore.set_value(ite,TWEET_ID,new_s.id)
+                        t = threading.Thread(target=favorite)
+                        t.start()
+                    else:
+                        fav = False
+                        def unfavorite():
+                            self.liststore.set_value(ite,FAVING,True)
+                            new_s = self.api.favorite_destroy(s.id)
+                            self.statuses[new_s.id] = new_s
+                            self.liststore.set_value(ite,FAVING,False)
+                            self.liststore.set_value(ite,TWEET_ID,new_s.id)
+
+                        t = threading.Thread(target=unfavorite)
+                        t.start()
+
+                    before_text = self.liststore.get_value(ite,MESSAGE).decode("utf-8")
+                    if fav:
+                        self.liststore.set_value(ite,MESSAGE,
+                                FAV_TEXT+before_text)
+                    else:
+                        self.liststore.set_value(ite,MESSAGE,
+                                before_text[len(FAV_TEXT):])
 
 # when j is pressed,call keypressed event.
 gtk.binding_entry_add_signal(Timeline,gtk.keysyms.J,
@@ -412,7 +441,6 @@ gtk.binding_entry_add_signal(Timeline,gtk.keysyms.F,
 gtk.binding_entry_add_signal(Timeline,gtk.keysyms.R,
         gtk.gdk.SHIFT_MASK,"keypressed",str,"R")
 
-
 class Timelinesw(gtk.ScrolledWindow):
     def __init__(self,client,mode="home"):
         gtk.ScrolledWindow.__init__(self)
@@ -432,11 +460,11 @@ class Timelinesw(gtk.ScrolledWindow):
 
     def on_vadjustment_changed(self,adj):
         if not self.vadj_lock and self.vadj_upper < adj.upper:
-            if len(self.view.store) != 0:
+            if len(self.view.liststore) != 0:
                 self.view.scroll_to_cell((0,))
                 self.view.added = False
         self.vadj_upper = adj.upper
-        self.vadj_len = len(self.view.store)
+        self.vadj_len = len(self.view.liststore)-1
 
     def on_vadjustment_value_changed(self,adj):
         if adj.value == 0.0:

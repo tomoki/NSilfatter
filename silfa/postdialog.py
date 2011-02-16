@@ -6,6 +6,7 @@ import threading
 import gobject
 from settings import *
 
+
 class PostView(gtk.TextView):
     __gsignals__= {
             "keypressed":(gobject.SIGNAL_RUN_LAST|gobject.SIGNAL_ACTION,
