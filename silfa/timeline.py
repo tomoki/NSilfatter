@@ -70,7 +70,7 @@ class Timeline(gtk.TreeView):
         # when size changed,call self.on_size_changed.
         self.connect("size-allocate",self.on_size_changed)
 
-        self.set_resize_mode(gtk.RESIZE_IMMEDIATE)
+        #self.set_resize_mode(gtk.RESIZE_IMMEDIATE)
 
         # when row_activated(row_clicked,enter pressed,and so on.)
         # call self.on_treeview_row_activated.
